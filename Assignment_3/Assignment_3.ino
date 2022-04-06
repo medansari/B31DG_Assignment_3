@@ -10,15 +10,27 @@ const int numPOT_values = 4;    // size of the array for storing potentiometer v
 int POT_Value[numPOT_values];   // readings from the POT input
 int POT_index;                  // POT value indexing
 int POT_total = 0;              // POT total
-int POT_average = 0;            // POT average
+
 
 int error_code = 0;            // inititialising error_code as an integer equal to 0
-int buttonState;               // inititialising buttonState as an integer
+
 
 unsigned long duration;           //inititialising duration as a unsigned long
 unsigned long durationTotal;      //inititialising durationTotal as a unsigned long
-int freq;                       //inititialising freq as a float 
 
+
+static const uint8_t queue_5_7_len = 3;
+static QueueHandle_t queue_5_7;
+static SemaphoreHandle_t mutex;
+
+
+struct task9_values
+{
+  int buttonState;               // inititialising buttonState as an integer
+  int freq;                       //inititialising freq as a float 
+  int POT_average = 0;            // POT average
+
+}t9;
 
 void setup() {
    // assigning inputs and outputs for all the pins
@@ -34,6 +46,7 @@ void setup() {
   for (int init_POT = 0; init_POT < numPOT_values; init_POT++){
     POT_Value[init_POT] = 0;
   }
+  mutex = xSemaphoreCreateMutex();
   xTaskCreate(
     task1, //function name
     "Task 1", // task name
@@ -113,6 +126,10 @@ void setup() {
     1, //task priority
     NULL // task handle
     );
+    queue_5_7=xQueueCreate(
+      queue_5_7_len,
+      sizeof(int)
+    );
    
 }
 
@@ -120,6 +137,8 @@ void loop() {
   // put your main code here, to run repeatedly:
 
 }
+
+
 
 
 
@@ -142,7 +161,7 @@ void task2(void*parameters)
   for(;;)
   {
   vTaskDelay(2/portTICK_PERIOD_MS);                      // adding a delay for debouncing 
-  buttonState = digitalRead(Push_button);     // read the state of the button
+  t9.buttonState = digitalRead(Push_button);     // read the state of the button
   vTaskDelay(2/portTICK_PERIOD_MS);                       // adding a delay for debouncing 
   
   vTaskDelay(20);
@@ -158,11 +177,11 @@ void task3(void*parameters)
 // if the pulse duration is equal to 0 return 
   if (duration == 0)
   {
-    return;
+    duration=1;
   }
   
   durationTotal = (duration*2);         // calculate the total duration
-  freq = (1000000/(durationTotal));     // calculate the frequency 
+  t9.freq = (1000000/(durationTotal));     // calculate the frequency 
   vTaskDelay(100);
 }
 }
@@ -190,7 +209,10 @@ void task5(void*parameters)
   {
     POT_index = 0;
   } 
-  POT_average = POT_total/numPOT_values;    //calculating POT average
+  t9.POT_average = POT_total/numPOT_values;    //calculating POT average
+xQueueSend(queue_5_7, (void * )&t9.POT_average, 0) ;
+ Serial.println(t9.POT_average);
+ vTaskDelay(500/portTICK_PERIOD_MS);
   vTaskDelay(4.2);
 }
 }
@@ -210,8 +232,12 @@ void task6(void*parameters)
 void task7(void*parameters)
 {
   for(;;){
+    xQueueReceive(queue_5_7, (void*)&t9.POT_average, 0);
+    Serial.println(t9.POT_average);
+    vTaskDelay(500/portTICK_PERIOD_MS);
+
   // using if statements to check error 
-  if (POT_average>(4095/2))
+  if (t9.POT_average>(4095/2))
   {
     error_code = 1; // setting error code to 1
   }
@@ -242,16 +268,19 @@ void task8(void*parameters)
 void task9(void*parameters)
 {
   for(;;){
+
   // printing button state, frequency and pot average in a CSV format
 if (digitalRead(Push_button)== HIGH)
 {
+xSemaphoreGive(mutex);
 
-  Serial.print(buttonState);  
+  Serial.print(t9.buttonState);  
   Serial.print(",");
-  Serial.print(freq);
+  Serial.print(t9.freq);
   Serial.print(",");
-  Serial.println(POT_average);
-
+  Serial.println(t9.POT_average);
+xSemaphoreGive(mutex);
+}
   vTaskDelay(500);
 }
 }

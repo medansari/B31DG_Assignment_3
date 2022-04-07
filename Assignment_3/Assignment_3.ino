@@ -18,6 +18,8 @@ unsigned long durationTotal; // inititialising durationTotal as a unsigned long
 
 static const uint8_t queue_5_7_len = 3;
 static QueueHandle_t queue_5_7;
+static const uint8_t queue_4_5_len = 3;
+static QueueHandle_t queue_4_5;
 static SemaphoreHandle_t mutex;
 
 struct task9_values
@@ -127,6 +129,9 @@ void setup()
   queue_5_7 = xQueueCreate(
       queue_5_7_len,
       sizeof(int));
+  queue_4_5 = xQueueCreate(
+      queue_4_5_len,
+      sizeof(int));
 }
 
 void loop()
@@ -150,10 +155,11 @@ void task2(void *parameters)
 {
   for (;;)
   {
+    xSemaphoreTake(mutex, 0);
     vTaskDelay(2 / portTICK_PERIOD_MS);        // adding a delay for debouncing
     t9.buttonState = digitalRead(Push_button); // read the state of the button
     vTaskDelay(2 / portTICK_PERIOD_MS);        // adding a delay for debouncing
-
+    xSemaphoreGive(mutex);
     vTaskDelay(20);
   }
 }
@@ -163,6 +169,7 @@ void task3(void *parameters)
 {
   for (;;)
   {
+    xSemaphoreTake(mutex, 0);
     duration = pulseIn(SigG, HIGH); // reading in pulse duartion
 
     // if the pulse duration is equal to 0 return
@@ -173,6 +180,7 @@ void task3(void *parameters)
 
     durationTotal = (duration * 2);        // calculate the total duration
     t9.freq = (1000000 / (durationTotal)); // calculate the frequency
+    xSemaphoreGive(mutex);
     vTaskDelay(100);
   }
 }
@@ -186,6 +194,7 @@ void task4(void *parameters)
     POT_total = POT_total - POT_Value[POT_index]; // subtracting from the pot_tatal
     POT_Value[POT_index] = analogRead(POT);       // storing the potentiometer values in the indexes
     digitalWrite(exec_time, LOW);
+    xQueueSend(queue_4_5, (void *)&POT_Value[POT_index], 0);
     vTaskDelay(4.2);
   }
 }
@@ -195,6 +204,8 @@ void task5(void *parameters)
 {
   for (;;)
   {
+    xSemaphoreTake(mutex, 0);
+    xQueueReceive(queue_4_5, (void *)&POT_Value[POT_index], 0);
     // storing the total potentiometer value
     POT_total = POT_total + POT_Value[POT_index];
     POT_index = POT_index + 1;
@@ -206,6 +217,7 @@ void task5(void *parameters)
     xQueueSend(queue_5_7, (void *)&t9.POT_average, 0);
     Serial.println(t9.POT_average);
     vTaskDelay(500 / portTICK_PERIOD_MS);
+    xSemaphoreGive(mutex);
     vTaskDelay(4.2);
   }
 }
@@ -227,6 +239,7 @@ void task7(void *parameters)
 {
   for (;;)
   {
+    xSemaphoreTake(mutex, 0);
     xQueueReceive(queue_5_7, (void *)&t9.POT_average, 0);
     Serial.println(t9.POT_average);
     vTaskDelay(500 / portTICK_PERIOD_MS);
@@ -240,6 +253,7 @@ void task7(void *parameters)
     {
       error_code = 0; // setting error code to 0
     }
+    xSemaphoreGive(mutex);
     vTaskDelay(33);
   }
 }
@@ -265,7 +279,7 @@ void task9(void *parameters)
 {
   for (;;)
   {
-    if (xSemaphoreTake(mutex, 0) == pdTRUE)
+    xSemaphoreTake(mutex, 0);
     {
       // printing button state, frequency and pot average in a CSV format
       if (digitalRead(Push_button) == HIGH)
